@@ -25,12 +25,25 @@ function authCookie(): string | null {
 async function espnFetch(url: string, opts: { fantasyFilter?: unknown } = {}): Promise<any> {
   const headers: Record<string, string> = {
     Accept: "application/json",
+    // ESPN's fantasy API sits behind a CDN that can treat requests without
+    // browser-like headers differently (routing/caching-wise) than the real
+    // fantasy.espn.com web app — this is the same host the live draft room
+    // itself calls, so match it as closely as possible to avoid landing on
+    // a stale cached edge response instead of the live backend.
+    Referer: "https://fantasy.espn.com/",
+    Origin: "https://fantasy.espn.com",
+    "Cache-Control": "no-cache",
+    Pragma: "no-cache",
   };
   const cookie = authCookie();
   if (cookie) headers["Cookie"] = cookie;
   if (opts.fantasyFilter) headers["x-fantasy-filter"] = JSON.stringify(opts.fantasyFilter);
 
-  const res = await fetch(url, { headers, cache: "no-store" });
+  // Belt-and-suspenders cache-busting: `cache: "no-store"` only stops
+  // Next.js's own fetch cache; this query param stops any CDN/edge cache
+  // sitting between us and ESPN's origin from short-circuiting on URL match.
+  const bustUrl = url + (url.includes("?") ? "&" : "?") + "_ts=" + Date.now();
+  const res = await fetch(bustUrl, { headers, cache: "no-store" });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`ESPN request failed (${res.status} ${res.statusText}) for ${url}: ${body.slice(0, 300)}`);
