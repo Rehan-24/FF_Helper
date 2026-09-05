@@ -11,7 +11,12 @@ export default function DraftBoard({
   playersById: Map<number, RankedPlayer>;
 }) {
   const teams = league.size || 8;
-  const rounds = Math.max(1, Math.ceil(picks.length / teams) + 1);
+  // Show the full empty grid from the start (one row per roster spot the
+  // league will actually draft), not just whatever rounds happen to have a
+  // pick in them yet — otherwise the board has nothing to render before
+  // the draft begins.
+  const totalRosterSpots = Object.values(league.rosterSlotCounts).reduce((sum, n) => sum + n, 0);
+  const rounds = Math.max(totalRosterSpots || 1, Math.ceil(picks.length / teams) + 1);
 
   const grid: (DraftPick | null)[][] = Array.from({ length: rounds }, (_, r) => {
     const round = r + 1;

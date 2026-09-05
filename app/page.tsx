@@ -143,9 +143,7 @@ export default function Home() {
         </div>
       </div>
 
-      {league && picks.length > 0 && (
-        <DraftBoard picks={picks} league={league} playersById={playersById} />
-      )}
+      {league && <DraftBoard picks={picks} league={league} playersById={playersById} />}
     </div>
   );
 }
