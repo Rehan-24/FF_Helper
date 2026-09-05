@@ -64,6 +64,11 @@ export interface RankedPlayer extends Player {
   replacementLevelPoints: number;
   valueOverReplacement: number;
   tier: number;
+  newsFlag?: {
+    category: "injury" | "legal";
+    headline: string;
+    link: string | null;
+  };
 }
 
 export interface NewsItem {

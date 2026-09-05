@@ -40,8 +40,24 @@ export default function RecommendationPanel({
               <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {r.player.fullName}{" "}
                 <span style={{ color: "var(--muted)", fontWeight: 400 }}>{r.player.proTeam}</span>
+                {r.player.newsFlag && (
+                  <span
+                    title={r.player.newsFlag.headline}
+                    style={{
+                      marginLeft: 6,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: r.player.newsFlag.category === "legal" ? "var(--bad)" : "var(--warn)",
+                      cursor: "help",
+                    }}
+                  >
+                    ⚠
+                  </span>
+                )}
               </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>{r.reason}</div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                {r.player.newsFlag ? `⚠ Recent news — verify before drafting` : r.reason}
+              </div>
             </div>
             <div style={{ textAlign: "right", fontSize: 12 }}>
               <div style={{ fontWeight: 700, color: "var(--good)" }}>+{r.score.toFixed(1)}</div>

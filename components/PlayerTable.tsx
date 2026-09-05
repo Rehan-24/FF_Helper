@@ -112,6 +112,20 @@ export default function PlayerTable({
                         {p.injuryStatus}
                       </span>
                     ) : null}
+                    {p.newsFlag && (
+                      <span
+                        title={p.newsFlag.headline}
+                        style={{
+                          marginLeft: 6,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: p.newsFlag.category === "legal" ? "var(--bad)" : "var(--warn)",
+                          cursor: "help",
+                        }}
+                      >
+                        ⚠ {p.newsFlag.category === "legal" ? "OFF-FIELD" : "NEWS"}
+                      </span>
+                    )}
                     {drafted && <span style={{ color: "var(--muted)", fontSize: 11, marginLeft: 6 }}>DRAFTED</span>}
                   </td>
                   <td style={td}>{p.proTeam}</td>
