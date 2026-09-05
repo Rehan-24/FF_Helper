@@ -3,12 +3,17 @@ import type { DraftDetail, DraftPick, LeagueSettings, NewsItem, Player, Position
 const LEAGUE_ID = process.env.ESPN_LEAGUE_ID || "856864482";
 const SEASON_YEAR = process.env.ESPN_SEASON_YEAR || String(new Date().getFullYear());
 
-const FANTASY_BASE = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons";
+const FANTASY_BASE_READS = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons";
+// The primary host — what the actual fantasy.espn.com web app (including
+// the live draft room) talks to. lm-api-reads is a dedicated read-replica;
+// for anything that needs to reflect an in-progress draft second-by-second,
+// prefer this host and fall back/merge with the replica.
+const FANTASY_BASE_PRIMARY = "https://fantasy.espn.com/apis/v3/games/ffl/seasons";
 const NEWS_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/news";
 const PLAYER_NEWS_BASE = "https://site.api.espn.com/apis/fantasy/v2/games/ffl/news/players";
 
-function leagueUrl() {
-  return `${FANTASY_BASE}/${SEASON_YEAR}/segments/0/leagues/${LEAGUE_ID}`;
+function leagueUrl(base: string = FANTASY_BASE_READS) {
+  return `${base}/${SEASON_YEAR}/segments/0/leagues/${LEAGUE_ID}`;
 }
 
 function hasAuth() {
@@ -257,24 +262,54 @@ export async function getAllPlayers(): Promise<Player[]> {
 
 // --- Draft --------------------------------------------------------------
 
-// Raw passthrough for debugging live sync issues — returns exactly what
-// ESPN sends, no filtering, so we can see the shape of draftDetail.picks
-// directly without needing a cookie re-typed into a separate curl command.
-export async function getRawDraftDetail(): Promise<any> {
-  const url = `${leagueUrl()}?view=mDraftDetail`;
+async function fetchDraftDetailFromHost(base: string): Promise<any> {
+  const url = `${leagueUrl(base)}?view=mDraftDetail`;
   return espnFetch(url);
 }
 
+// Raw passthrough for debugging live sync issues — returns exactly what
+// each host sends, no filtering, so we can compare them directly without
+// needing a cookie re-typed into a separate curl command.
+export async function getRawDraftDetail(): Promise<any> {
+  const [primary, reads] = await Promise.allSettled([
+    fetchDraftDetailFromHost(FANTASY_BASE_PRIMARY),
+    fetchDraftDetailFromHost(FANTASY_BASE_READS),
+  ]);
+  return {
+    primaryHost: primary.status === "fulfilled" ? primary.value : { error: String(primary.reason) },
+    readsHost: reads.status === "fulfilled" ? reads.value : { error: String(reads.reason) },
+  };
+}
+
 export async function getDraftDetail(): Promise<DraftDetail> {
-  const url = `${leagueUrl()}?view=mDraftDetail`;
-  const data = await espnFetch(url);
-  const dd = data?.draftDetail || {};
+  // lm-api-reads is a dedicated read-replica and may lag the live draft
+  // room; the primary host is what the actual web app talks to. Query
+  // both in parallel and merge, preferring whichever has a real pick
+  // (playerId > 0, not the -1 "not yet picked" placeholder) for each slot.
+  const [primaryResult, readsResult] = await Promise.allSettled([
+    fetchDraftDetailFromHost(FANTASY_BASE_PRIMARY),
+    fetchDraftDetailFromHost(FANTASY_BASE_READS),
+  ]);
+
+  const primaryDd = primaryResult.status === "fulfilled" ? primaryResult.value?.draftDetail : null;
+  const readsDd = readsResult.status === "fulfilled" ? readsResult.value?.draftDetail : null;
+  const dd = primaryDd || readsDd || {};
+
+  const byOverall = new Map<number, any>();
+  for (const p of readsDd?.picks || []) byOverall.set(p.overallPickNumber, p);
+  for (const p of primaryDd?.picks || []) {
+    const existing = byOverall.get(p.overallPickNumber);
+    const candidateIsReal = typeof p.playerId === "number" && p.playerId > 0;
+    const existingIsReal = existing && typeof existing.playerId === "number" && existing.playerId > 0;
+    if (!existing || candidateIsReal || !existingIsReal) byOverall.set(p.overallPickNumber, p);
+  }
+
   // ESPN pre-populates every slot for the entire draft (all rounds, all
-  // teams) before it even starts, using playerId -1 (sometimes 0/null) as
-  // a "not yet picked" placeholder. Only keep entries that represent an
-  // actual completed selection, or picks.length reads as the whole
-  // draft's slot count instead of how many picks have really happened.
-  const picks: DraftPick[] = (dd.picks || [])
+  // teams) before it even starts, using playerId -1 as a "not yet picked"
+  // placeholder. Only keep entries that represent an actual completed
+  // selection, or picks.length reads as the whole draft's slot count
+  // instead of how many picks have really happened.
+  const picks: DraftPick[] = Array.from(byOverall.values())
     .filter((p: any) => typeof p.playerId === "number" && p.playerId > 0)
     .map((p: any) => ({
       id: p.id,
