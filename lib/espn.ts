@@ -248,15 +248,22 @@ export async function getDraftDetail(): Promise<DraftDetail> {
   const url = `${leagueUrl()}?view=mDraftDetail`;
   const data = await espnFetch(url);
   const dd = data?.draftDetail || {};
-  const picks: DraftPick[] = (dd.picks || []).map((p: any) => ({
-    id: p.id,
-    playerId: p.playerId,
-    teamId: p.teamId,
-    roundId: p.roundId,
-    roundPickNumber: p.roundPickNumber,
-    overallPickNumber: p.overallPickNumber,
-    keeper: Boolean(p.keeper),
-  }));
+  // ESPN pre-populates every slot for the entire draft (all rounds, all
+  // teams) before it even starts, using playerId -1 (sometimes 0/null) as
+  // a "not yet picked" placeholder. Only keep entries that represent an
+  // actual completed selection, or picks.length reads as the whole
+  // draft's slot count instead of how many picks have really happened.
+  const picks: DraftPick[] = (dd.picks || [])
+    .filter((p: any) => typeof p.playerId === "number" && p.playerId > 0)
+    .map((p: any) => ({
+      id: p.id,
+      playerId: p.playerId,
+      teamId: p.teamId,
+      roundId: p.roundId,
+      roundPickNumber: p.roundPickNumber,
+      overallPickNumber: p.overallPickNumber,
+      keeper: Boolean(p.keeper),
+    }));
   return {
     inProgress: Boolean(dd.inProgress),
     drafted: Boolean(dd.drafted),
