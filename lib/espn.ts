@@ -257,6 +257,14 @@ export async function getAllPlayers(): Promise<Player[]> {
 
 // --- Draft --------------------------------------------------------------
 
+// Raw passthrough for debugging live sync issues — returns exactly what
+// ESPN sends, no filtering, so we can see the shape of draftDetail.picks
+// directly without needing a cookie re-typed into a separate curl command.
+export async function getRawDraftDetail(): Promise<any> {
+  const url = `${leagueUrl()}?view=mDraftDetail`;
+  return espnFetch(url);
+}
+
 export async function getDraftDetail(): Promise<DraftDetail> {
   const url = `${leagueUrl()}?view=mDraftDetail`;
   const data = await espnFetch(url);
