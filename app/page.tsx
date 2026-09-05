@@ -22,6 +22,32 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [manualDrafted, setManualDrafted] = useState<Set<number>>(new Set());
+  const [draftPollError, setDraftPollError] = useState<string | null>(null);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("manualDraftedIds");
+      if (stored) setManualDrafted(new Set(JSON.parse(stored)));
+    } catch {
+      // ignore — falls back to empty set
+    }
+  }, []);
+
+  const toggleManualDrafted = useCallback((playerId: number) => {
+    setManualDrafted((prev) => {
+      const next = new Set(prev);
+      if (next.has(playerId)) next.delete(playerId);
+      else next.add(playerId);
+      try {
+        localStorage.setItem("manualDraftedIds", JSON.stringify(Array.from(next)));
+      } catch {
+        // best-effort persistence only
+      }
+      return next;
+    });
+  }, []);
 
   const loadCore = useCallback(async () => {
     try {
@@ -50,9 +76,15 @@ export default function Home() {
   const pollDraft = useCallback(async () => {
     try {
       const res = await fetch("/api/draft").then((r) => r.json());
-      if (res.draft) setPicks(sortPicks(res.draft.picks));
-    } catch {
-      // transient poll failure — next interval will retry
+      if (res.draft) {
+        setPicks(sortPicks(res.draft.picks));
+        setDraftPollError(null);
+        setLastSynced(new Date());
+      } else if (res.error) {
+        setDraftPollError(res.error);
+      }
+    } catch (e: any) {
+      setDraftPollError(e?.message || "Draft poll failed");
     }
   }, []);
 
@@ -67,7 +99,11 @@ export default function Home() {
   }, [pollDraft]);
 
   const playersById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
-  const draftedIds = useMemo(() => new Set(picks.map((p) => p.playerId)), [picks]);
+  const draftedIds = useMemo(() => {
+    const ids = new Set(picks.map((p) => p.playerId));
+    for (const id of manualDrafted) ids.add(id);
+    return ids;
+  }, [picks, manualDrafted]);
   const available = useMemo(() => players.filter((p) => !draftedIds.has(p.id)), [players, draftedIds]);
 
   const myPlayers = useMemo(() => {
@@ -124,6 +160,15 @@ export default function Home() {
 
       {league && <OnTheClock league={league} picksMade={picks.length} />}
 
+      <div style={{ fontSize: 11, color: draftPollError ? "var(--bad)" : "var(--muted)" }}>
+        {draftPollError
+          ? `Draft sync failing: ${draftPollError}`
+          : lastSynced
+          ? `Draft synced ${lastSynced.toLocaleTimeString()} · ${picks.length} picks made`
+          : "Syncing draft..."}
+        {manualDrafted.size > 0 && ` · ${manualDrafted.size} marked manually`}
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "280px 1fr 320px", gap: 16, alignItems: "start" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {league && <TeamRoster league={league} myPlayers={myPlayers} />}
@@ -131,7 +176,13 @@ export default function Home() {
         </div>
 
         <div style={{ height: 640 }}>
-          <PlayerTable players={available} draftedIds={draftedIds} onSelect={handleSelectPlayer} />
+          <PlayerTable
+            players={players}
+            draftedIds={draftedIds}
+            onSelect={handleSelectPlayer}
+            manualDrafted={manualDrafted}
+            onToggleManualDrafted={toggleManualDrafted}
+          />
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

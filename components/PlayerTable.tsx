@@ -10,10 +10,14 @@ export default function PlayerTable({
   players,
   draftedIds,
   onSelect,
+  manualDrafted,
+  onToggleManualDrafted,
 }: {
   players: RankedPlayer[];
   draftedIds: Set<number>;
   onSelect: (playerId: number) => void;
+  manualDrafted: Set<number>;
+  onToggleManualDrafted: (playerId: number) => void;
 }) {
   const [query, setQuery] = useState("");
   const [position, setPosition] = useState<Position | "ALL">("ALL");
@@ -86,11 +90,13 @@ export default function PlayerTable({
               <th style={thRight}>Tier</th>
               <th style={thRight}>ADP</th>
               <th style={thRight}>% Own</th>
+              <th style={thRight}>Drafted?</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((p) => {
               const drafted = draftedIds.has(p.id);
+              const isManual = manualDrafted.has(p.id);
               return (
                 <tr
                   key={p.id}
@@ -126,7 +132,11 @@ export default function PlayerTable({
                         ⚠ {p.newsFlag.category === "legal" ? "OFF-FIELD" : "NEWS"}
                       </span>
                     )}
-                    {drafted && <span style={{ color: "var(--muted)", fontSize: 11, marginLeft: 6 }}>DRAFTED</span>}
+                    {drafted && (
+                      <span style={{ color: "var(--muted)", fontSize: 11, marginLeft: 6 }}>
+                        {isManual ? "DRAFTED (manual)" : "DRAFTED"}
+                      </span>
+                    )}
                   </td>
                   <td style={td}>{p.proTeam}</td>
                   <td style={tdRight}>{p.projectedPoints.toFixed(1)}</td>
@@ -134,12 +144,39 @@ export default function PlayerTable({
                   <td style={tdRight}>{p.tier}</td>
                   <td style={tdRight}>{p.adp ? p.adp.toFixed(1) : "—"}</td>
                   <td style={tdRight}>{p.percentOwned.toFixed(0)}%</td>
+                  <td style={tdRight}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleManualDrafted(p.id);
+                      }}
+                      disabled={drafted && !isManual}
+                      title={
+                        drafted && !isManual
+                          ? "Synced from ESPN — can't be manually undone"
+                          : isManual
+                          ? "Click to undo"
+                          : "Mark as drafted (by anyone)"
+                      }
+                      style={{
+                        background: isManual ? "var(--panel-2)" : "transparent",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        padding: "3px 8px",
+                        fontSize: 11,
+                        color: drafted && !isManual ? "var(--border)" : "var(--text)",
+                        cursor: drafted && !isManual ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {isManual ? "Undo" : "Mark"}
+                    </button>
+                  </td>
                 </tr>
               );
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={9} style={{ ...td, color: "var(--muted)", textAlign: "center", padding: 20 }}>
+                <td colSpan={10} style={{ ...td, color: "var(--muted)", textAlign: "center", padding: 20 }}>
                   No players match.
                 </td>
               </tr>
