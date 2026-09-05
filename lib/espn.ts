@@ -150,7 +150,11 @@ export async function getLeagueSettings(): Promise<LeagueSettings> {
 // --- Players ----------------------------------------------------------------
 
 const PLAYERS_PAGE_SIZE = 400;
-const MAX_PLAYERS = 4000;
+// Safety ceiling, not a real limit — ESPN's full tracked player pool
+// (including practice squad / IR) can run past 4000, and low-ownership
+// players (new rookies especially) sort to the very end, so this must sit
+// comfortably above the real universe size or they get silently cut off.
+const MAX_PLAYERS = 20000;
 
 function extractProjectedPoints(player: any, seasonId: number): number {
   const stats: any[] = player?.stats || [];
@@ -201,13 +205,19 @@ function mapPlayer(raw: any, seasonId: number): Player {
 export async function getAllPlayers(): Promise<Player[]> {
   const seasonId = Number(SEASON_YEAR);
   const players: Player[] = [];
+  const seenIds = new Set<number>();
   let offset = 0;
 
   while (offset < MAX_PLAYERS) {
     const filter = {
       players: {
         filterStatsForTopScoringPeriodIds: { value: 16 },
-        sortPercOwned: { sortAsc: false, sortPriority: 1 },
+        // Secondary sort key: percOwned alone ties thousands of players at
+        // 0% (rookies and deep bench included), and paginating a fixed
+        // offset over a huge tie-block isn't guaranteed stable across
+        // requests — draft rank breaks those ties so nobody gets skipped.
+        sortPercOwned: { sortAsc: false, sortPriority: 2 },
+        sortDraftRanks: { sortAsc: true, sortPriority: 1, value: "STANDARD" },
         limit: PLAYERS_PAGE_SIZE,
         offset,
       },
@@ -218,7 +228,11 @@ export async function getAllPlayers(): Promise<Player[]> {
     if (batch.length === 0) break;
 
     for (const raw of batch) {
-      players.push(mapPlayer(raw, seasonId));
+      const player = mapPlayer(raw, seasonId);
+      if (!seenIds.has(player.id)) {
+        seenIds.add(player.id);
+        players.push(player);
+      }
     }
 
     if (batch.length < PLAYERS_PAGE_SIZE) break;
