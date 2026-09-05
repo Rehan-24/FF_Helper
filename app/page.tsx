@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DraftPick, LeagueSettings, NewsItem, Position, RankedPlayer } from "@/lib/types";
 import { recommendPicks } from "@/lib/rankings";
-import { sortPicks } from "@/lib/draft";
+import { onTheClockTeamId, sortPicks } from "@/lib/draft";
 import RecommendationPanel from "@/components/RecommendationPanel";
 import TeamRoster from "@/components/TeamRoster";
 import PlayerTable from "@/components/PlayerTable";
@@ -55,6 +55,10 @@ export default function Home() {
   }, [picks, manualPicks]);
 
   const teamsCount = league?.size || 8;
+  const onClockTeamId = useMemo(
+    () => (league ? onTheClockTeamId(league, combinedPicks.length) : null),
+    [league, combinedPicks]
+  );
 
   const setManualPick = useCallback(
     (playerId: number, teamId: number) => {
@@ -219,6 +223,7 @@ export default function Home() {
             onSelect={handleSelectPlayer}
             teams={league?.teams || []}
             myTeamId={league?.myTeamId ?? null}
+            onClockTeamId={onClockTeamId}
             manualPickTeamIds={manualPickTeamIds}
             onSetManualPick={setManualPick}
             onClearManualPick={clearManualPick}

@@ -12,6 +12,7 @@ export default function PlayerTable({
   onSelect,
   teams,
   myTeamId,
+  onClockTeamId,
   manualPickTeamIds,
   onSetManualPick,
   onClearManualPick,
@@ -21,10 +22,12 @@ export default function PlayerTable({
   onSelect: (playerId: number) => void;
   teams: Team[];
   myTeamId: number | null;
+  onClockTeamId: number | null;
   manualPickTeamIds: Map<number, number>;
   onSetManualPick: (playerId: number, teamId: number) => void;
   onClearManualPick: (playerId: number) => void;
 }) {
+  const onClockTeam = teams.find((t) => t.id === onClockTeamId);
   const [query, setQuery] = useState("");
   const [position, setPosition] = useState<Position | "ALL">("ALL");
   const [hideDrafted, setHideDrafted] = useState(true);
@@ -155,36 +158,57 @@ export default function PlayerTable({
                   <td style={tdRight}>{p.adp ? p.adp.toFixed(1) : "—"}</td>
                   <td style={tdRight}>{p.percentOwned.toFixed(0)}%</td>
                   <td style={tdRight} onClick={(e) => e.stopPropagation()}>
-                    <select
-                      value={manualTeamId ?? ""}
-                      disabled={drafted && !isManual}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === "") onClearManualPick(p.id);
-                        else onSetManualPick(p.id, Number(val));
-                      }}
-                      title={
-                        drafted && !isManual
-                          ? "Synced from ESPN — can't be manually overridden"
-                          : "Mark as drafted by..."
-                      }
-                      style={{
-                        background: isManual ? "var(--panel-2)" : "transparent",
-                        border: "1px solid var(--border)",
-                        borderRadius: 6,
-                        padding: "3px 6px",
-                        fontSize: 11,
-                        color: drafted && !isManual ? "var(--border)" : "var(--text)",
-                        cursor: drafted && !isManual ? "not-allowed" : "pointer",
-                      }}
-                    >
-                      <option value="">{drafted && !isManual ? "(synced)" : "Mark taken..."}</option>
-                      {teams.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.id === myTeamId ? `⭐ ${t.abbrev} (me)` : t.abbrev}
-                        </option>
-                      ))}
-                    </select>
+                    <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                      {!drafted && onClockTeamId != null && (
+                        <button
+                          onClick={() => onSetManualPick(p.id, onClockTeamId)}
+                          title={`One-click: assign to ${onClockTeam?.abbrev || onClockTeamId} (on the clock)`}
+                          style={{
+                            background: "var(--accent)",
+                            border: "none",
+                            borderRadius: 6,
+                            padding: "3px 8px",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#fff",
+                            cursor: "pointer",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Take → {onClockTeam?.abbrev || "?"}
+                        </button>
+                      )}
+                      <select
+                        value={manualTeamId ?? ""}
+                        disabled={drafted && !isManual}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "") onClearManualPick(p.id);
+                          else onSetManualPick(p.id, Number(val));
+                        }}
+                        title={
+                          drafted && !isManual
+                            ? "Synced from ESPN — can't be manually overridden"
+                            : "Mark as drafted by..."
+                        }
+                        style={{
+                          background: isManual ? "var(--panel-2)" : "transparent",
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          padding: "3px 6px",
+                          fontSize: 11,
+                          color: drafted && !isManual ? "var(--border)" : "var(--text)",
+                          cursor: drafted && !isManual ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        <option value="">{drafted && !isManual ? "(synced)" : "Other..."}</option>
+                        {teams.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.id === myTeamId ? `⭐ ${t.abbrev} (me)` : t.abbrev}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </td>
                 </tr>
               );
