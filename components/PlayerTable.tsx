@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Position, RankedPlayer } from "@/lib/types";
+import type { Position, RankedPlayer, Team } from "@/lib/types";
 import PositionBadge from "./PositionBadge";
 
 const POSITIONS: (Position | "ALL")[] = ["ALL", "QB", "RB", "WR", "TE", "K", "D/ST"];
@@ -10,14 +10,20 @@ export default function PlayerTable({
   players,
   draftedIds,
   onSelect,
-  manualDrafted,
-  onToggleManualDrafted,
+  teams,
+  myTeamId,
+  manualPickTeamIds,
+  onSetManualPick,
+  onClearManualPick,
 }: {
   players: RankedPlayer[];
   draftedIds: Set<number>;
   onSelect: (playerId: number) => void;
-  manualDrafted: Set<number>;
-  onToggleManualDrafted: (playerId: number) => void;
+  teams: Team[];
+  myTeamId: number | null;
+  manualPickTeamIds: Map<number, number>;
+  onSetManualPick: (playerId: number, teamId: number) => void;
+  onClearManualPick: (playerId: number) => void;
 }) {
   const [query, setQuery] = useState("");
   const [position, setPosition] = useState<Position | "ALL">("ALL");
@@ -96,7 +102,9 @@ export default function PlayerTable({
           <tbody>
             {filtered.map((p) => {
               const drafted = draftedIds.has(p.id);
-              const isManual = manualDrafted.has(p.id);
+              const manualTeamId = manualPickTeamIds.get(p.id);
+              const isManual = manualTeamId != null;
+              const manualTeam = isManual ? teams.find((t) => t.id === manualTeamId) : null;
               return (
                 <tr
                   key={p.id}
@@ -134,7 +142,9 @@ export default function PlayerTable({
                     )}
                     {drafted && (
                       <span style={{ color: "var(--muted)", fontSize: 11, marginLeft: 6 }}>
-                        {isManual ? "DRAFTED (manual)" : "DRAFTED"}
+                        {isManual
+                          ? `→ ${manualTeam?.abbrev || "?"} (manual)`
+                          : "DRAFTED"}
                       </span>
                     )}
                   </td>
@@ -144,32 +154,37 @@ export default function PlayerTable({
                   <td style={tdRight}>{p.tier}</td>
                   <td style={tdRight}>{p.adp ? p.adp.toFixed(1) : "—"}</td>
                   <td style={tdRight}>{p.percentOwned.toFixed(0)}%</td>
-                  <td style={tdRight}>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleManualDrafted(p.id);
-                      }}
+                  <td style={tdRight} onClick={(e) => e.stopPropagation()}>
+                    <select
+                      value={manualTeamId ?? ""}
                       disabled={drafted && !isManual}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "") onClearManualPick(p.id);
+                        else onSetManualPick(p.id, Number(val));
+                      }}
                       title={
                         drafted && !isManual
-                          ? "Synced from ESPN — can't be manually undone"
-                          : isManual
-                          ? "Click to undo"
-                          : "Mark as drafted (by anyone)"
+                          ? "Synced from ESPN — can't be manually overridden"
+                          : "Mark as drafted by..."
                       }
                       style={{
                         background: isManual ? "var(--panel-2)" : "transparent",
                         border: "1px solid var(--border)",
                         borderRadius: 6,
-                        padding: "3px 8px",
+                        padding: "3px 6px",
                         fontSize: 11,
                         color: drafted && !isManual ? "var(--border)" : "var(--text)",
                         cursor: drafted && !isManual ? "not-allowed" : "pointer",
                       }}
                     >
-                      {isManual ? "Undo" : "Mark"}
-                    </button>
+                      <option value="">{drafted && !isManual ? "(synced)" : "Mark taken..."}</option>
+                      {teams.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.id === myTeamId ? `⭐ ${t.abbrev} (me)` : t.abbrev}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                 </tr>
               );

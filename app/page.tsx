@@ -22,32 +22,73 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [manualDrafted, setManualDrafted] = useState<Set<number>>(new Set());
+  const [manualPicks, setManualPicks] = useState<DraftPick[]>([]);
   const [draftPollError, setDraftPollError] = useState<string | null>(null);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("manualDraftedIds");
-      if (stored) setManualDrafted(new Set(JSON.parse(stored)));
+      const stored = localStorage.getItem("manualPicks");
+      if (stored) setManualPicks(JSON.parse(stored));
     } catch {
-      // ignore — falls back to empty set
+      // ignore — falls back to empty list
     }
   }, []);
 
-  const toggleManualDrafted = useCallback((playerId: number) => {
-    setManualDrafted((prev) => {
-      const next = new Set(prev);
-      if (next.has(playerId)) next.delete(playerId);
-      else next.add(playerId);
-      try {
-        localStorage.setItem("manualDraftedIds", JSON.stringify(Array.from(next)));
-      } catch {
-        // best-effort persistence only
-      }
-      return next;
-    });
+  const persistManualPicks = useCallback((next: DraftPick[]) => {
+    setManualPicks(next);
+    try {
+      localStorage.setItem("manualPicks", JSON.stringify(next));
+    } catch {
+      // best-effort persistence only
+    }
   }, []);
+
+  // Merged view real ESPN picks take priority: once ESPN's sync actually
+  // catches up to a manually-marked player, their real pick (with the
+  // correct team/pick-number) replaces the manual placeholder automatically.
+  const combinedPicks = useMemo(() => {
+    const manualOnly = manualPicks.filter(
+      (mp) => !picks.some((p) => p.playerId === mp.playerId)
+    );
+    return sortPicks([...picks, ...manualOnly]);
+  }, [picks, manualPicks]);
+
+  const teamsCount = league?.size || 8;
+
+  const setManualPick = useCallback(
+    (playerId: number, teamId: number) => {
+      const overall = combinedPicks.length + 1;
+      const roundId = Math.floor((overall - 1) / teamsCount) + 1;
+      const roundPickNumber = ((overall - 1) % teamsCount) + 1;
+      const next = [
+        ...manualPicks.filter((mp) => mp.playerId !== playerId),
+        {
+          id: -playerId, // negative so it can never collide with a real ESPN pick id
+          playerId,
+          teamId,
+          roundId,
+          roundPickNumber,
+          overallPickNumber: overall,
+          keeper: false,
+        },
+      ];
+      persistManualPicks(next);
+    },
+    [manualPicks, combinedPicks, teamsCount, persistManualPicks]
+  );
+
+  const clearManualPick = useCallback(
+    (playerId: number) => {
+      persistManualPicks(manualPicks.filter((mp) => mp.playerId !== playerId));
+    },
+    [manualPicks, persistManualPicks]
+  );
+
+  const manualPickTeamIds = useMemo(
+    () => new Map(manualPicks.map((mp) => [mp.playerId, mp.teamId])),
+    [manualPicks]
+  );
 
   const loadCore = useCallback(async () => {
     try {
@@ -99,20 +140,16 @@ export default function Home() {
   }, [pollDraft]);
 
   const playersById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
-  const draftedIds = useMemo(() => {
-    const ids = new Set(picks.map((p) => p.playerId));
-    for (const id of manualDrafted) ids.add(id);
-    return ids;
-  }, [picks, manualDrafted]);
+  const draftedIds = useMemo(() => new Set(combinedPicks.map((p) => p.playerId)), [combinedPicks]);
   const available = useMemo(() => players.filter((p) => !draftedIds.has(p.id)), [players, draftedIds]);
 
   const myPlayers = useMemo(() => {
     if (!league?.myTeamId) return [];
-    return picks
+    return combinedPicks
       .filter((p) => p.teamId === league.myTeamId)
       .map((p) => playersById.get(p.playerId))
       .filter((p): p is RankedPlayer => Boolean(p));
-  }, [picks, league, playersById]);
+  }, [combinedPicks, league, playersById]);
 
   const myPositions = useMemo<Position[]>(() => myPlayers.map((p) => p.position), [myPlayers]);
 
@@ -158,15 +195,15 @@ export default function Home() {
         </div>
       )}
 
-      {league && <OnTheClock league={league} picksMade={picks.length} />}
+      {league && <OnTheClock league={league} picksMade={combinedPicks.length} />}
 
       <div style={{ fontSize: 11, color: draftPollError ? "var(--bad)" : "var(--muted)" }}>
         {draftPollError
           ? `Draft sync failing: ${draftPollError}`
           : lastSynced
-          ? `Draft synced ${lastSynced.toLocaleTimeString()} · ${picks.length} picks made`
+          ? `Draft synced ${lastSynced.toLocaleTimeString()} · ${picks.length} ESPN-synced picks`
           : "Syncing draft..."}
-        {manualDrafted.size > 0 && ` · ${manualDrafted.size} marked manually`}
+        {manualPicks.length > 0 && ` · ${manualPicks.length} marked manually`}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "280px 1fr 320px", gap: 16, alignItems: "start" }}>
@@ -180,8 +217,11 @@ export default function Home() {
             players={players}
             draftedIds={draftedIds}
             onSelect={handleSelectPlayer}
-            manualDrafted={manualDrafted}
-            onToggleManualDrafted={toggleManualDrafted}
+            teams={league?.teams || []}
+            myTeamId={league?.myTeamId ?? null}
+            manualPickTeamIds={manualPickTeamIds}
+            onSetManualPick={setManualPick}
+            onClearManualPick={clearManualPick}
           />
         </div>
 
@@ -194,7 +234,7 @@ export default function Home() {
         </div>
       </div>
 
-      {league && <DraftBoard picks={picks} league={league} playersById={playersById} />}
+      {league && <DraftBoard picks={combinedPicks} league={league} playersById={playersById} />}
     </div>
   );
 }
